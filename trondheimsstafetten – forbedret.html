@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Tidsestimat – Trondheimsstafetten</title>
+
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 900px;
+        margin: auto;
+        padding: 12px;
+      }
+
+      h2 {
+        margin-bottom: 10px;
+      }
+
+      label {
+        font-weight: bold;
+      }
+
+      #startgruppe {
+        width: 100%;
+        max-width: 320px;
+        margin: 6px 0 14px;
+        padding: 6px;
+      }
+
+      /* ===== Etappeliste (Grid) ===== */
+
+      .etappeliste {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .etappe-rad {
+        display: grid;
+        grid-template-columns: 1fr auto auto auto;
+        gap: 8px;
+        align-items: center;
+        padding: 4px 0;
+        border-bottom: 1px solid #ddd;
+      }
+
+      .etappe-header {
+        font-weight: bold;
+        border-bottom: 2px solid #ccc;
+        padding-bottom: 6px;
+      }
+
+      select {
+        width: 4.5em; /* akkurat nok for 4:00 */
+        padding: 2px;
+        font-size: 0.9rem;
+      }
+
+      .tid {
+        min-width: 3.5em;
+        text-align: right;
+      }
+
+      h3 {
+        margin-top: 12px;
+      }
+
+      @media (max-width: 600px) {
+        body {
+          font-size: 0.9rem;
+        }
+
+        .etappe-rad {
+          gap: 6px;
+        }
+      }
+
+      /* ===== Toggle / glider ===== */
+
+      .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 10px 0 14px;
+        font-size: 0.9rem;
+      }
+
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 42px;
+        height: 22px;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        border-radius: 22px;
+        transition: 0.2s;
+      }
+
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 2px;
+        bottom: 2px;
+        background-color: white;
+        border-radius: 50%;
+        transition: 0.2s;
+      }
+
+      input:checked + .slider {
+        background-color: #4caf50;
+      }
+
+      input:checked + .slider:before {
+        transform: translateX(20px);
+      }
+
+      /* Visuelt hint for låste felt */
+      select:disabled {
+        opacity: 0.6;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h2>Tidsestimat – Trondheimsstafetten</h2>
+
+    <label for="startgruppe">Startgruppe:</label><br />
+    <select id="startgruppe">
+      <option value="">– Velg startgruppe –</option>
+      <option value="14:00:00">KLUBBLAG (14:00)</option>
+      <option value="14:15:00">BEST I LAG pulje 1 (14:15)</option>
+      <option value="14:18:00">BEDRIFTSLAG pulje 1 (14:18)</option>
+      <option value="14:30:00">BEDRIFTSLAG pulje 2 (14:30)</option>
+      <option value="14:33:00">BEDRIFTSLAG pulje 3 (14:33)</option>
+    </select>
+
+    <div class="toggle-wrapper">
+      <span>Samme hastighet for alle</span>
+      <label class="switch">
+        <input type="checkbox" id="likHastighet" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="etappeliste">
+      <div class="etappe-rad etappe-header">
+        <div>Etappe</div>
+        <div>Hastighet</div>
+        <div>Start</div>
+        <div>Etappetid</div>
+      </div>
+
+      <div id="tabell"></div>
+    </div>
+
+    <h3>Total distanse: <span id="totalDistanse">–</span></h3>
+    <h3>Total tid: <span id="totalTid">–</span></h3>
+    <h3>Målgang: <span id="målgang">–</span></h3>
+
+    <script>
+      const etapper = [
+        { navn: "1 Promenaden 1609 m", dist: 1.609 },
+        { navn: "2 Rockheim 2590 m", dist: 2.59 },
+        { navn: "3 Lade 1000 m", dist: 1 },
+        { navn: "4 Rosenborg 2900 m", dist: 2.9 },
+        { navn: "5 Kristiansten 1750 m", dist: 1.75 },
+        { navn: "6 Gløshaugen 1609 m", dist: 1.609 },
+        { navn: "7 Byåsen 2720 m", dist: 2.72 },
+        { navn: "8 Sverresborg 3150 m", dist: 3.15 },
+        { navn: "9 Kalvskinnet 800 m", dist: 0.8 },
+        { navn: "10 Nidaros 2580 m", dist: 2.58 },
+      ];
+
+      // Konvertering av tid
+      const Tid = {
+        tilSek(tid) {
+          if (!tid || !tid.includes(":")) return null;
+          const [m, s] = tid.split(":").map(Number);
+          return m * 60 + s;
+        },
+        tilMinSek(sek) {
+          const m = Math.floor(sek / 60);
+          const s = Math.round(sek % 60);
+          return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+        },
+        tilTimerMinSek(sek) {
+          const h = Math.floor(sek / 3600);
+          sek %= 3600;
+          const m = Math.floor(sek / 60);
+          const s = Math.round(sek % 60);
+          return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+        },
+        leggTilSek(start, sek) {
+          let [h, m, s] = start.split(":").map(Number);
+          let total = h * 3600 + m * 60 + s + sek;
+          const nh = Math.floor(total / 3600);
+          total %= 3600;
+          const nm = Math.floor(total / 60);
+          const ns = total % 60;
+          return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}:${String(ns).padStart(2, "0")}`;
+        },
+        rundTilMinutt(t) {
+          let [h, m, s] = t.split(":").map(Number);
+          if (s >= 30) m++;
+          if (m >= 60) {
+            m = 0;
+            h++;
+          }
+          return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+        }
+      }
+
+      // Hastigheter 2:00–10:00 i steg på 10 sek
+      function lagHastighetsvalg() {
+        let valg = "";
+        for (let min = 2; min <= 10; min++) {
+          for (let sek = 0; sek < 60; sek += 10) {
+            if (min === 10 && sek > 0) break;
+            valg += `<option value="${min}:${String(sek).padStart(2, "0")}">
+                ${min}:${String(sek).padStart(2, "0")}
+               </option>`;
+          }
+        }
+        return valg;
+      }
+
+      function lagTabell() {
+        const container = document.getElementById("tabell");
+        container.innerHTML = "";
+        const hastighetsvalg = lagHastighetsvalg();
+
+        etapper.forEach((e, i) => {
+          container.innerHTML += `
+            <div class="etappe-rad">
+              <div>${e.navn}</div>
+              <div>
+                <select id="hast${i}">
+                  <option value="">–</option>
+                  ${hastighetsvalg}
+                </select>
+              </div>
+              <div class="tid" id="starttid${i}">–</div>
+              <div class="tid" id="etappetid${i}">–</div>
+            </div>
+          `;
+        });
+      }
+
+      function beregnTotalDistanse() {
+        const totalKm = etapper.reduce((sum, e) => sum + e.dist, 0);
+        document.getElementById("totalDistanse").innerText =
+          `${totalKm.toFixed(2)} km`;
+      }
+
+      function settFellesHastighet(aktiv) {
+        etapper.forEach((_, i) => {
+          const felt = document.getElementById(`hast${i}`);
+
+          if (aktiv && i > 0) {
+            felt.disabled = true;
+          } else {
+            felt.disabled = false;
+          }
+        });
+
+        if (aktiv) {
+          synkHastigheter();
+        }
+
+        beregn();
+      }
+
+      function synkHastigheter() {
+        const felles = document.getElementById("hast0").value;
+        if (!felles) return;
+
+        etapper.forEach((_, i) => {
+          const felt = document.getElementById(`hast${i}`);
+          felt.value = felles;
+        });
+      }
+
+      function beregn() {
+        const starttid = document.getElementById("startgruppe").value;
+
+        /* Hvis ingen startgruppe er valgt → nullstill og stopp */
+        if (!starttid) {
+          etapper.forEach((_, i) => {
+            document.getElementById(`starttid${i}`).innerText = "–";
+            document.getElementById(`etappetid${i}`).innerText = "–";
+          });
+          document.getElementById("totalTid").innerText = "–";
+          document.getElementById("målgang").innerText = "–";
+          return;
+        }
+
+        let løpendeStart = starttid;
+        let totalSek = 0;
+
+        etapper.forEach((e, i) => {
+          document.getElementById(`starttid${i}`).innerText =
+            Tid.rundTilMinutt(løpendeStart);
+
+          const hast = document.getElementById(`hast${i}`).value;
+          // const sekPerKm = tidTilSek(hast);
+          const sekPerKm = Tid.tilSek(hast);
+
+          if (sekPerKm) {
+            const etappeSek = sekPerKm * e.dist;
+            totalSek += etappeSek;
+            document.getElementById(`etappetid${i}`).innerText =
+              Tid.tilMinSek(etappeSek);
+            løpendeStart = Tid.leggTilSek(løpendeStart, etappeSek);
+          } else {
+            document.getElementById(`etappetid${i}`).innerText = "–";
+          }
+        });
+
+        document.getElementById("totalTid").innerText = Tid.tilTimerMinSek(totalSek);
+
+        document.getElementById("målgang").innerText = Tid.rundTilMinutt(
+          Tid.leggTilSek(starttid, totalSek),
+        );
+      }
+
+      lagTabell();
+      beregnTotalDistanse();
+
+
+      document.addEventListener("input", (e) => {
+        const fellesAktiv = document.getElementById("likHastighet").checked;
+
+        if (fellesAktiv && e.target.id === "hast0") {
+          synkHastigheter();
+        }
+
+        beregn();
+      });
+
+      document.getElementById("startgruppe").addEventListener("change", beregn);
+
+      document
+        .getElementById("likHastighet")
+        .addEventListener("change", (e) => {
+          settFellesHastighet(e.target.checked);
+        });
+    </script>
+  </body>
+</html>
